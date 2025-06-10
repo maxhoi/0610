@@ -1,1 +1,320 @@
-3q24w5e67
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇游戏（无敌技能版）</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        
+        #game-container {
+            position: relative;
+        }
+        
+        #game-canvas {
+            border: 2px solid #333;
+            background-color: #111;
+        }
+        
+        #score-display {
+            margin-top: 10px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        #skill-display {
+            margin-top: 5px;
+            font-size: 18px;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        #restart-btn {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        #restart-btn:hover {
+            background-color: #45a049;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .controls p {
+            margin: 5px 0;
+            color: #555;
+        }
+        
+        .invincible {
+            animation: blink 0.3s infinite;
+        }
+        
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .cooldown {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <h1>贪吃蛇游戏（无敌技能版）</h1>
+    <div id="game-container">
+        <canvas id="game-canvas" width="400" height="400"></canvas>
+        <div id="game-over">
+            <h2>游戏结束!</h2>
+            <p id="final-score">得分: 0</p>
+            <button id="restart-btn">再玩一次</button>
+        </div>
+    </div>
+    <div id="score-display">得分: 0</div>
+    <div id="skill-display">无敌技能: 准备就绪 (按空格键激活)</div>
+    <div class="controls">
+        <p>使用方向键或 WASD 键控制蛇的移动</p>
+        <p>吃掉红色食物可以增长身体并得分</p>
+        <p>按空格键激活3秒无敌时间（20秒冷却）</p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const scoreDisplay = document.getElementById('score-display');
+            const skillDisplay = document.getElementById('skill-display');
+            const gameOverDisplay = document.getElementById('game-over');
+            const finalScoreDisplay = document.getElementById('final-score');
+            const restartBtn = document.getElementById('restart-btn');
+            
+            const gridSize = 20;
+            const tileCount = canvas.width / gridSize;
+            
+            let snake = [
+                {x: 10, y: 10}
+            ];
+            let food = {x: 5, y: 5};
+            let direction = {x: 1, y: 0};
+            let nextDirection = {x: 1, y: 0};
+            let score = 0;
+            let gameSpeed = 150;
+            let gameLoop;
+            let isGameOver = false;
+            
+            // 无敌技能相关变量
+            let isInvincible = false;
+            let invincibleEndTime = 0;
+            let skillCooldown = false;
+            let cooldownEndTime = 0;
+            let skillReady = true;
+            
+            document.addEventListener('keydown', handleKeyPress);
+            restartBtn.addEventListener('click', restartGame);
+            
+            function startGame() {
+                snake = [{x: 10, y: 10}];
+                direction = {x: 1, y: 0};
+                nextDirection = {x: 1, y: 0};
+                score = 0;
+                isGameOver = false;
+                isInvincible = false;
+                skillCooldown = false;
+                skillReady = true;
+                scoreDisplay.textContent = `得分: ${score}`;
+                skillDisplay.textContent = "无敌技能: 准备就绪 (按空格键激活)";
+                skillDisplay.className = "";
+                gameOverDisplay.style.display = 'none';
+                placeFood();
+                
+                if (gameLoop) clearInterval(gameLoop);
+                gameLoop = setInterval(gameUpdate, gameSpeed);
+            }
+            
+            function gameUpdate() {
+                if (isGameOver) return;
+                
+                // 更新技能状态
+                updateSkillStatus();
+                
+                direction = {...nextDirection};
+                
+                const head = {x: snake[0].x + direction.x, y: snake[0].y + direction.y};
+                
+                // 检测是否撞墙（无敌状态下不会因撞墙死亡）
+                if ((head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) && !isInvincible) {
+                    gameOver();
+                    return;
+                }
+                
+                // 处理穿墙（无敌状态下可以穿墙）
+                if (isInvincible) {
+                    if (head.x < 0) head.x = tileCount - 1;
+                    if (head.x >= tileCount) head.x = 0;
+                    if (head.y < 0) head.y = tileCount - 1;
+                    if (head.y >= tileCount) head.y = 0;
+                }
+                
+                snake.unshift(head);
+                
+                if (head.x === food.x && head.y === food.y) {
+                    score++;
+                    scoreDisplay.textContent = `得分: ${score}`;
+                    
+                    if (score % 5 === 0) {
+                        gameSpeed = Math.max(gameSpeed - 5, 50);
+                        clearInterval(gameLoop);
+                        gameLoop = setInterval(gameUpdate, gameSpeed);
+                    }
+                    
+                    placeFood();
+                } else {
+                    snake.pop();
+                }
+                
+                drawGame();
+            }
+            
+            function drawGame() {
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 绘制蛇
+                snake.forEach((segment, index) => {
+                    if (isInvincible) {
+                        ctx.fillStyle = index === 0 ? '#FFD700' : '#FFA500'; // 无敌状态金色
+                    } else {
+                        ctx.fillStyle = index === 0 ? '#4CAF50' : '#2E7D32'; // 普通状态绿色
+                    }
+                    ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
+                    
+                    ctx.strokeStyle = '#1B5E20';
+                    ctx.strokeRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
+                });
+                
+                // 绘制食物
+                ctx.fillStyle = '#FF5252';
+                ctx.beginPath();
+                const centerX = food.x * gridSize + gridSize / 2;
+                const centerY = food.y * gridSize + gridSize / 2;
+                ctx.arc(centerX, centerY, gridSize / 2 - 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#FF8A80';
+                ctx.beginPath();
+                ctx.arc(centerX - 3, centerY - 3, 3, 0, Math.PI * 2);
+                ctx.arc(centerX + 4, centerY - 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            function placeFood() {
+                let newFoodPosition;
+                do {
+                    newFoodPosition = {
+                        x: Math.floor(Math.random() * tileCount),
+                        y: Math.floor(Math.random() * tileCount)
+                    };
+                } while (snake.some(segment => 
+                    segment.x === newFoodPosition.x && segment.y === newFoodPosition.y
+                ));
+                
+                food = newFoodPosition;
+            }
+            
+            function handleKeyPress(e) {
+                if (isGameOver) return;
+                
+                // 方向控制
+                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                    if (direction.y === 0) nextDirection = {x: 0, y: -1};
+                } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+                    if (direction.y === 0) nextDirection = {x: 0, y: 1};
+                } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                    if (direction.x === 0) nextDirection = {x: -1, y: 0};
+                } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                    if (direction.x === 0) nextDirection = {x: 1, y: 0};
+                }
+                // 技能激活
+                else if (e.key === ' ' && skillReady) {
+                    activateInvincibility();
+                }
+            }
+            
+            function activateInvincibility() {
+                isInvincible = true;
+                skillReady = false;
+                invincibleEndTime = Date.now() + 3000; // 3秒无敌
+                skillDisplay.textContent = "无敌技能: 激活中 (3秒)";
+                skillDisplay.classList.add("invincible");
+                
+                setTimeout(() => {
+                    isInvincible = false;
+                    skillDisplay.classList.remove("invincible");
+                    startCooldown();
+                }, 3000);
+            }
+            
+            function startCooldown() {
+                skillCooldown = true;
+                cooldownEndTime = Date.now() + 20000; // 20秒冷却
+                skillDisplay.textContent = "无敌技能: 冷却中 (20秒)";
+                skillDisplay.classList.add("cooldown");
+            }
+            
+            function updateSkillStatus() {
+                if (skillCooldown && Date.now() >= cooldownEndTime) {
+                    skillCooldown = false;
+                    skillReady = true;
+                    skillDisplay.textContent = "无敌技能: 准备就绪 (按空格键激活)";
+                    skillDisplay.className = "";
+                } else if (skillCooldown) {
+                    const remaining = Math.ceil((cooldownEndTime - Date.now()) / 1000);
+                    skillDisplay.textContent = `无敌技能: 冷却中 (${remaining}秒)`;
+                }
+            }
+            
+            function gameOver() {
+                isGameOver = true;
+                clearInterval(gameLoop);
+                finalScoreDisplay.textContent = `最终得分: ${score}`;
+                gameOverDisplay.style.display = 'block';
+            }
+            
+            function restartGame() {
+                startGame();
+            }
+            
+            startGame();
+        });
+    </script>
+</body>
+</html>
